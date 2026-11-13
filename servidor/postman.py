@@ -1,8 +1,8 @@
 import requests
 
-url = 'http://127.0.0.1:5000/upload'
+url = 'http://127.0.0.1:5000/detectar'
 
-caminho_imagem = 'cereja.jpg'
+caminho_imagem = 'Diogo.jpeg'
 
 with open(caminho_imagem, 'rb') as f: 
     bytes_foto = f.read()
