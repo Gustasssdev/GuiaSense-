@@ -1,0 +1,7 @@
+{"id": 1, "objeto": "person", "confianca": 98.62, "data_hora": "20/11/2026 10:16:22"}
+{"id": 2, "objeto": "person", "confianca": 99.9, "data_hora": "20/11/2026 16:05:35"}
+{"id": 3, "objeto": "person", "confianca": 99.96, "data_hora": "20/11/2026 16:06:29"}
+{"id": 4, "objeto": "keyboard", "confianca": 42.72, "data_hora": "20/11/2026 16:07:51"}
+{"id": 5, "objeto": "keyboard", "confianca": 72.68, "data_hora": "20/11/2026 16:08:29"}
+{"id": 6, "objeto": "person", "confianca": 56.05, "data_hora": "20/11/2026 16:13:32"}
+{"id": 7, "objeto": "person", "confianca": 69.56, "data_hora": "20/11/2026 16:14:37"}

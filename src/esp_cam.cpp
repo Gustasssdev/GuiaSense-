@@ -8,8 +8,8 @@ const char* ssid = "GUSTA";
 const char* password = "gustavo113";
 const char* serverUrl = "http://10.250.197.48:5000/detectar"; // Coloque o IP do seu PC aqui
 
-// Intervalo entre envios: 5 minutos (300.000 ms)
-const unsigned long INTERVALO_MS = 300000;
+// Intervalo entre envios: 1 minutos (60.000 ms)
+const unsigned long INTERVALO_MS = 60000;
 
 // --- MAPEAMENTO DE PINOS (AI-THINKER) ---
 #define PWDN_GPIO_NUM     32
