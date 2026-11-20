@@ -1,0 +1,345 @@
+
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>GuiaSense - Sistema de Alertas</title>
+
+    <style>
+
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            background: #222;
+            color: white;
+            margin: 30px;
+        }
+
+        .painel {
+            max-width: 450px;
+            margin: 40px auto;
+            padding: 25px;
+            background: #333;
+            border-radius: 12px;
+        }
+
+        .controle-alertas {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 15px;
+            margin-top: 25px;
+        }
+
+        /* Esconde o checkbox original */
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 60px;
+            height: 34px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        /* Aparencia da barra deslizante */
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            inset: 0;
+            background-color: #777;
+            transition: 0.3s;
+            border-radius: 34px;
+        }
+
+        /* Botao circular da barra */
+        .slider::before {
+            position: absolute;
+            content: "";
+            height: 26px;
+            width: 26px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: 0.3s;
+            border-radius: 50%;
+        }
+
+        /* Estado ativado */
+        input:checked + .slider {
+            background-color: #28a745;
+        }
+
+        input:checked + .slider::before {
+            transform: translateX(26px);
+        }
+
+        #estado-alertas {
+            font-weight: bold;
+            color: #ff5555;
+        }
+
+        #objeto-detectado {
+            color: #00ccff;
+        }
+
+    </style>
+
+</head>
+
+<body>
+
+    <div class="painel">
+
+        <h2>GuiaSense - Sistema de Alertas</h2>
+
+        <p>
+            Objeto detectado:
+            <strong id="objeto-detectado">Aguardando...</strong>
+        </p>
+
+        <p>
+            Confiança:
+            <strong id="confianca-deteccao">0%</strong>
+        </p>
+
+        <div class="controle-alertas">
+
+            <span>Alertas de voz:</span>
+
+            <label class="switch">
+
+                <input
+                    type="checkbox"
+                    id="controle-voz"
+                    onchange="alternarAlertas(this)"
+                >
+
+                <span class="slider"></span>
+
+            </label>
+
+        </div>
+
+        <p id="estado-alertas">
+            Alertas desativados
+        </p>
+
+    </div>
+
+
+    <script>
+
+        // =================================================
+        // VARIAVEIS DE CONTROLE
+        // =================================================
+
+        let alertasAtivos = false;
+
+        // Guarda o ultimo identificador recebido
+        let ultimoEventoId = 0;
+
+        // Evita requisicoes simultaneas
+        let requisicaoEmAndamento = false;
+
+
+        // =================================================
+        // FUNCAO DE SINTese DE VOZ
+        // =================================================
+
+        function falarTexto(texto) {
+
+            if ('speechSynthesis' in window) {
+
+                const mensagem = new SpeechSynthesisUtterance(texto);
+
+                mensagem.lang = 'pt-BR';
+
+                // Permite que as mensagens sejam enfileiradas
+                window.speechSynthesis.speak(mensagem);
+
+            }
+        }
+
+
+        // =================================================
+        // ATIVAR E DESATIVAR ALERTAS
+        // =================================================
+
+        async function alternarAlertas(controle) {
+
+            if (controle.checked) {
+
+                try {
+
+                    // Sincroniza com o ultimo evento existente.
+                    // Eventos antigos nao serao anunciados.
+                    const resposta = await fetch('/eventos?desde=0');
+
+                    if (!resposta.ok) {
+                        throw new Error("Falha ao consultar eventos");
+                    }
+
+                    const dados = await resposta.json();
+
+                    ultimoEventoId = dados.ultimo_id;
+
+                    alertasAtivos = true;
+
+                    document.getElementById('estado-alertas').innerText =
+                        "Alertas ativados";
+
+                    document.getElementById('estado-alertas').style.color =
+                        "#28a745";
+
+                    falarTexto("Alertas de voz ativados com sucesso");
+
+                } catch (erro) {
+
+                    console.error("Erro ao ativar alertas:", erro);
+
+                    controle.checked = false;
+                    alertasAtivos = false;
+
+                    document.getElementById('estado-alertas').innerText =
+                        "Erro ao ativar alertas";
+
+                }
+
+            } else {
+
+                alertasAtivos = false;
+
+                // Cancela mensagens que ainda nao foram faladas
+                window.speechSynthesis.cancel();
+
+                document.getElementById('estado-alertas').innerText =
+                    "Alertas desativados";
+
+                document.getElementById('estado-alertas').style.color =
+                    "#ff5555";
+
+                falarTexto("Alertas de voz desativados");
+
+            }
+
+        }
+
+
+        // =================================================
+        // CONSULTAR NOVOS EVENTOS
+        // =================================================
+
+        async function verificarNovosEventos() {
+
+            if (!alertasAtivos || requisicaoEmAndamento) {
+                return;
+            }
+
+            requisicaoEmAndamento = true;
+
+            try {
+
+                const resposta = await fetch(
+                    `/eventos?desde=${ultimoEventoId}`
+                );
+
+                if (!resposta.ok) {
+                    throw new Error("Falha ao consultar novos eventos");
+                }
+
+                const dados = await resposta.json();
+
+                // Atualiza o objeto mais recente na interface
+                document.getElementById('objeto-detectado').innerText =
+                    dados.ultima_deteccao.objeto;
+
+                document.getElementById('confianca-deteccao').innerText =
+                    dados.ultima_deteccao.confianca + "%";
+
+
+                // Verifica todos os eventos recebidos
+                for (const evento of dados.eventos) {
+
+                    if (evento.id > ultimoEventoId) {
+
+                        // Anuncia o novo objeto detectado
+                        falarTexto(
+                            `${evento.objeto} à frente`
+                        );
+
+                        // Atualiza o ultimo ID processado
+                        ultimoEventoId = evento.id;
+
+                        console.log(
+                            "Novo evento recebido:",
+                            evento
+                        );
+
+                    }
+
+                }
+
+            } catch (erro) {
+
+                console.error(
+                    "Erro ao consultar novos eventos:",
+                    erro
+                );
+
+            } finally {
+
+                requisicaoEmAndamento = false;
+
+            }
+
+        }
+
+
+        // =================================================
+        // ATUALIZACAO AUTOMATICA
+        // =================================================
+
+        // Consulta novos eventos a cada 2 segundos
+        setInterval(verificarNovosEventos, 2000);
+
+
+        // =================================================
+        // CONSULTA INICIAL
+        // =================================================
+
+        async function atualizarStatusInicial() {
+
+            try {
+
+                const resposta = await fetch('/ultima-deteccao');
+
+                const dados = await resposta.json();
+
+                document.getElementById('objeto-detectado').innerText =
+                    dados.objeto;
+
+                document.getElementById('confianca-deteccao').innerText =
+                    dados.confianca + "%";
+
+            } catch (erro) {
+
+                console.error("Erro ao consultar status inicial:", erro);
+
+            }
+
+        }
+
+        atualizarStatusInicial();
+
+    </script>
+
+</body>
+
+</html>
