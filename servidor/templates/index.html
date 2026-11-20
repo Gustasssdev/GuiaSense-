@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="pt-BR">
 
@@ -15,15 +14,34 @@
             text-align: center;
             background: #222;
             color: white;
-            margin: 30px;
+            margin: 20px;
         }
 
         .painel {
-            max-width: 450px;
-            margin: 40px auto;
+            max-width: 480px;
+            margin: 30px auto;
             padding: 25px;
             background: #333;
             border-radius: 12px;
+        }
+
+        /* Frase atual: o que a voz fala */
+        #frase-atual {
+            font-size: 1.6rem;
+            line-height: 1.35;
+            min-height: 2.2em;
+            margin: 20px 0 8px;
+            color: #00ccff;
+        }
+
+        #frase-atual.perto {
+            color: #ffb020;
+        }
+
+        .detalhe {
+            color: #bbb;
+            font-size: 0.95rem;
+            margin: 4px 0;
         }
 
         .controle-alertas {
@@ -34,7 +52,6 @@
             margin-top: 25px;
         }
 
-        /* Esconde o checkbox original */
         .switch {
             position: relative;
             display: inline-block;
@@ -48,7 +65,6 @@
             height: 0;
         }
 
-        /* Aparencia da barra deslizante */
         .slider {
             position: absolute;
             cursor: pointer;
@@ -58,7 +74,6 @@
             border-radius: 34px;
         }
 
-        /* Botao circular da barra */
         .slider::before {
             position: absolute;
             content: "";
@@ -71,7 +86,6 @@
             border-radius: 50%;
         }
 
-        /* Estado ativado */
         input:checked + .slider {
             background-color: #28a745;
         }
@@ -80,13 +94,56 @@
             transform: translateX(26px);
         }
 
+        /* Foco visível para quem navega pelo teclado */
+        .switch input:focus-visible + .slider {
+            outline: 3px solid #00ccff;
+            outline-offset: 3px;
+        }
+
         #estado-alertas {
             font-weight: bold;
             color: #ff5555;
         }
 
-        #objeto-detectado {
-            color: #00ccff;
+        #estado-conexao {
+            font-size: 0.85rem;
+            color: #ff5555;
+            min-height: 1.2em;
+        }
+
+        .historico {
+            text-align: left;
+            margin-top: 25px;
+            border-top: 1px solid #444;
+            padding-top: 15px;
+        }
+
+        .historico h3 {
+            font-size: 1rem;
+            margin: 0 0 10px;
+            color: #ccc;
+        }
+
+        .historico ol {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .historico li {
+            padding: 6px 0;
+            border-bottom: 1px solid #3c3c3c;
+            font-size: 0.95rem;
+        }
+
+        .historico time {
+            color: #999;
+            margin-right: 8px;
+            font-size: 0.85rem;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .slider, .slider::before { transition: none; }
         }
 
     </style>
@@ -99,37 +156,44 @@
 
         <h2>GuiaSense - Sistema de Alertas</h2>
 
-        <p>
-            Objeto detectado:
-            <strong id="objeto-detectado">Aguardando...</strong>
+        <p id="frase-atual">Aguardando a câmera...</p>
+
+        <p class="detalhe">
+            Objeto principal:
+            <strong id="objeto-detectado">nenhum</strong>
+            (<span id="confianca-deteccao">0%</span>)
         </p>
 
-        <p>
-            Confiança:
-            <strong id="confianca-deteccao">0%</strong>
+        <p class="detalhe">
+            Última foto: <span id="hora-deteccao">-</span>
         </p>
 
         <div class="controle-alertas">
 
-            <span>Alertas de voz:</span>
+            <span id="rotulo-voz">Alertas de voz:</span>
 
             <label class="switch">
-
                 <input
                     type="checkbox"
                     id="controle-voz"
+                    aria-labelledby="rotulo-voz"
                     onchange="alternarAlertas(this)"
                 >
-
                 <span class="slider"></span>
-
             </label>
 
         </div>
 
-        <p id="estado-alertas">
-            Alertas desativados
-        </p>
+        <p id="estado-alertas">Alertas desativados</p>
+
+        <p id="estado-conexao"></p>
+
+        <div class="historico">
+            <h3>Últimos alertas</h3>
+            <ol id="lista-historico">
+                <li>Nenhum alerta ainda.</li>
+            </ol>
+        </div>
 
     </div>
 
@@ -137,33 +201,97 @@
     <script>
 
         // =================================================
-        // VARIAVEIS DE CONTROLE
+        // VARIÁVEIS DE CONTROLE
         // =================================================
 
         let alertasAtivos = false;
-
-        // Guarda o ultimo identificador recebido
         let ultimoEventoId = 0;
-
-        // Evita requisicoes simultaneas
         let requisicaoEmAndamento = false;
+        const historico = [];
+        const MAX_HISTORICO = 8;
+
+        // Frase de um evento (eventos antigos só têm "objeto")
+        function fraseDoEvento(evento) {
+            return evento.frase || `${evento.objeto} à frente`;
+        }
 
 
         // =================================================
-        // FUNCAO DE SINTese DE VOZ
+        // SÍNTESE DE VOZ
         // =================================================
+
+        function escolherVozPortugues() {
+
+            const vozes = window.speechSynthesis.getVoices();
+
+            return (
+                vozes.find(v => v.lang === 'pt-BR') ||
+                vozes.find(v => v.lang && v.lang.startsWith('pt')) ||
+                null
+            );
+        }
 
         function falarTexto(texto) {
 
-            if ('speechSynthesis' in window) {
+            if (!('speechSynthesis' in window)) {
+                return;
+            }
 
-                const mensagem = new SpeechSynthesisUtterance(texto);
+            // Descarta falas antigas: só interessa o que está na frente agora
+            window.speechSynthesis.cancel();
 
-                mensagem.lang = 'pt-BR';
+            const mensagem = new SpeechSynthesisUtterance(texto);
+            mensagem.lang = 'pt-BR';
+            mensagem.rate = 1.1;
 
-                // Permite que as mensagens sejam enfileiradas
-                window.speechSynthesis.speak(mensagem);
+            const voz = escolherVozPortugues();
+            if (voz) {
+                mensagem.voice = voz;
+            }
 
+            window.speechSynthesis.speak(mensagem);
+        }
+
+        // Alguns navegadores carregam a lista de vozes depois
+        if ('speechSynthesis' in window) {
+            window.speechSynthesis.onvoiceschanged = () => {};
+        }
+
+
+        // =================================================
+        // INTERFACE
+        // =================================================
+
+        function atualizarStatus(ultima) {
+
+            const frase = document.getElementById('frase-atual');
+            const temPerto = (ultima.deteccoes || []).some(d => d.perto);
+
+            frase.innerText = ultima.frase || 'Nada detectado';
+            frase.classList.toggle('perto', temPerto);
+
+            document.getElementById('objeto-detectado').innerText = ultima.objeto;
+            document.getElementById('confianca-deteccao').innerText = ultima.confianca + '%';
+            document.getElementById('hora-deteccao').innerText = ultima.data_hora || '-';
+        }
+
+        function adicionarAoHistorico(evento) {
+
+            historico.unshift(evento);
+            historico.length = Math.min(historico.length, MAX_HISTORICO);
+
+            const lista = document.getElementById('lista-historico');
+            lista.innerHTML = '';
+
+            for (const e of historico) {
+
+                const item = document.createElement('li');
+                const hora = document.createElement('time');
+
+                hora.innerText = (e.data_hora || '').split(' ')[1] || '';
+                item.appendChild(hora);
+                item.appendChild(document.createTextNode(fraseDoEvento(e)));
+                lista.appendChild(item);
             }
         }
 
@@ -174,169 +302,130 @@
 
         async function alternarAlertas(controle) {
 
+            const estado = document.getElementById('estado-alertas');
+
             if (controle.checked) {
 
                 try {
 
-                    // Sincroniza com o ultimo evento existente.
-                    // Eventos antigos nao serao anunciados.
+                    // Sincroniza com o último evento: eventos antigos não são falados
                     const resposta = await fetch('/eventos?desde=0');
 
                     if (!resposta.ok) {
-                        throw new Error("Falha ao consultar eventos");
+                        throw new Error('Falha ao consultar eventos');
                     }
 
                     const dados = await resposta.json();
-
                     ultimoEventoId = dados.ultimo_id;
-
                     alertasAtivos = true;
 
-                    document.getElementById('estado-alertas').innerText =
-                        "Alertas ativados";
+                    estado.innerText = 'Alertas ativados';
+                    estado.style.color = '#28a745';
 
-                    document.getElementById('estado-alertas').style.color =
-                        "#28a745";
-
-                    falarTexto("Alertas de voz ativados com sucesso");
+                    // Esta fala também "libera" o áudio no celular,
+                    // que só permite voz depois de um toque do usuário
+                    falarTexto('Alertas de voz ativados');
 
                 } catch (erro) {
 
-                    console.error("Erro ao ativar alertas:", erro);
-
+                    console.error('Erro ao ativar alertas:', erro);
                     controle.checked = false;
                     alertasAtivos = false;
-
-                    document.getElementById('estado-alertas').innerText =
-                        "Erro ao ativar alertas";
-
+                    estado.innerText = 'Erro ao ativar alertas: servidor sem resposta';
                 }
 
             } else {
 
                 alertasAtivos = false;
-
-                // Cancela mensagens que ainda nao foram faladas
-                window.speechSynthesis.cancel();
-
-                document.getElementById('estado-alertas').innerText =
-                    "Alertas desativados";
-
-                document.getElementById('estado-alertas').style.color =
-                    "#ff5555";
-
-                falarTexto("Alertas de voz desativados");
-
+                estado.innerText = 'Alertas desativados';
+                estado.style.color = '#ff5555';
+                falarTexto('Alertas de voz desativados');
             }
-
         }
 
 
         // =================================================
-        // CONSULTAR NOVOS EVENTOS
+        // CONSULTA PERIÓDICA
         // =================================================
 
         async function verificarNovosEventos() {
 
-            if (!alertasAtivos || requisicaoEmAndamento) {
+            if (requisicaoEmAndamento) {
                 return;
             }
 
             requisicaoEmAndamento = true;
+            const conexao = document.getElementById('estado-conexao');
 
             try {
 
-                const resposta = await fetch(
-                    `/eventos?desde=${ultimoEventoId}`
-                );
+                const resposta = await fetch(`/eventos?desde=${ultimoEventoId}`);
 
                 if (!resposta.ok) {
-                    throw new Error("Falha ao consultar novos eventos");
+                    throw new Error('Falha ao consultar novos eventos');
                 }
 
                 const dados = await resposta.json();
+                conexao.innerText = '';
 
-                // Atualiza o objeto mais recente na interface
-                document.getElementById('objeto-detectado').innerText =
-                    dados.ultima_deteccao.objeto;
+                atualizarStatus(dados.ultima_deteccao);
 
-                document.getElementById('confianca-deteccao').innerText =
-                    dados.ultima_deteccao.confianca + "%";
+                const novos = dados.eventos.filter(e => e.id > ultimoEventoId);
 
+                if (novos.length > 0) {
 
-                // Verifica todos os eventos recebidos
-                for (const evento of dados.eventos) {
-
-                    if (evento.id > ultimoEventoId) {
-
-                        // Anuncia o novo objeto detectado
-                        falarTexto(
-                            `${evento.objeto} à frente`
-                        );
-
-                        // Atualiza o ultimo ID processado
-                        ultimoEventoId = evento.id;
-
-                        console.log(
-                            "Novo evento recebido:",
-                            evento
-                        );
-
+                    for (const e of novos) {
+                        adicionarAoHistorico(e);
                     }
 
+                    // Se chegaram vários de uma vez, fala só o mais recente
+                    if (alertasAtivos) {
+                        falarTexto(fraseDoEvento(novos[novos.length - 1]));
+                    }
+
+                    ultimoEventoId = novos[novos.length - 1].id;
                 }
 
             } catch (erro) {
 
-                console.error(
-                    "Erro ao consultar novos eventos:",
-                    erro
-                );
+                console.error('Erro ao consultar novos eventos:', erro);
+                conexao.innerText = 'Sem conexão com o servidor. Tentando de novo...';
 
             } finally {
 
                 requisicaoEmAndamento = false;
-
             }
-
         }
 
 
         // =================================================
-        // ATUALIZACAO AUTOMATICA
+        // INÍCIO
         // =================================================
 
-        // Consulta novos eventos a cada 2 segundos
-        setInterval(verificarNovosEventos, 2000);
-
-
-        // =================================================
-        // CONSULTA INICIAL
-        // =================================================
-
-        async function atualizarStatusInicial() {
+        async function iniciar() {
 
             try {
 
-                const resposta = await fetch('/ultima-deteccao');
-
+                // Começa do último evento existente, sem falar os antigos
+                const resposta = await fetch('/eventos?desde=0');
                 const dados = await resposta.json();
 
-                document.getElementById('objeto-detectado').innerText =
-                    dados.objeto;
+                ultimoEventoId = dados.ultimo_id;
+                atualizarStatus(dados.ultima_deteccao);
 
-                document.getElementById('confianca-deteccao').innerText =
-                    dados.confianca + "%";
+                for (const e of dados.eventos.slice(-MAX_HISTORICO)) {
+                    adicionarAoHistorico(e);
+                }
 
             } catch (erro) {
 
-                console.error("Erro ao consultar status inicial:", erro);
-
+                console.error('Erro ao consultar status inicial:', erro);
             }
 
+            setInterval(verificarNovosEventos, 1000);
         }
 
-        atualizarStatusInicial();
+        iniciar();
 
     </script>
 

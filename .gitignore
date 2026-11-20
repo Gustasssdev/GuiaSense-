@@ -6,3 +6,10 @@
 .venv/
 YOLO/
 __pycache__/
+
+# Credenciais do Wi-Fi (use include/secrets.example.h como modelo)
+include/secrets.h
+
+# Arquivos gerados nos testes
+ultima_foto.jpg
+.teste_*.log
